@@ -18,7 +18,8 @@ def dib3(taxas: List[Decimal], p: Decimal) -> Decimal:
         di = tdik(taxa)
         c = Decimal(1) + di * (p / Decimal(100))
         ret *= c
-    return ret
+    decimal.getcontext().rounding = decimal.ROUND_HALF_EVEN
+    return round(ret, 8)
 
 
 def tdik(di: Decimal) -> Decimal:
@@ -40,4 +41,8 @@ class TestDI(unittest.TestCase):
     def test_dib3_one_day(self):
         ret = dib3([Decimal('6.89')], Decimal('100.0000'))
         self.assertEqual(ret, Decimal('1.00026444'))
+
+    def test_dib3_two_days(self):
+        ret = dib3([Decimal('6.89')] * 2, Decimal('100.0000'))
+        self.assertEqual(ret, Decimal('1.00052895'))
 
