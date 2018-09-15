@@ -27,13 +27,15 @@ def dib3(taxas: List[Decimal], p: Decimal) -> Decimal:
         di = tdik(taxa)
         c = Decimal(1) + di * (p / Decimal(100))
         ret *= c
+        decimal.getcontext().rounding = decimal.ROUND_FLOOR
+        ret = round(ret, 16)
     decimal.getcontext().rounding = decimal.ROUND_HALF_EVEN
     return round(ret, 8)
 
 
 def tdik(di: Decimal) -> Decimal:
-    decimal.getcontext().rounding = decimal.ROUND_FLOOR
     ret = (di / Decimal(100) + 1)**(Decimal(1) / Decimal(252)) - 1
+    decimal.getcontext().rounding = decimal.ROUND_HALF_EVEN
     return round(ret, 8)
 
 
@@ -59,8 +61,14 @@ class TestDI(unittest.TestCase):
         ret = dib3([Decimal('6.89')] * 22, Decimal('100.0000'))
         self.assertEqual(ret, Decimal('1.00583386'))
 
-    def test_dib3_2018_03_22(self):
-        ret = dib3([Decimal('6.89')] * 122, Decimal('100.0000'))
+    def test_dib3_2018_01_01__2018_03_01(self):
+        taxas = ([Decimal('6.64')] * 13) + ([Decimal('6.89')] * 27)
+        self.assertEqual(len(taxas), 40)
+        ret = dib3(taxas, Decimal(100))
+        self.assertEqual(ret, Decimal('1.01051031'))
+
+    def test_dib3_2018_03_22__2018_09_15(self):
+        ret = dib3([Decimal('6.39')] * 123, Decimal('100.0000'))
         self.assertEqual(ret, Decimal('1.03044173'))
 
 
@@ -139,7 +147,7 @@ def main(start: date, end: date, p: Decimal):
         print("Data inicial nao pode ser menor que {}".format(mindate()))
         sys.exit(1)
 
-    maxdate = datetime.date.today() - datetime.timedelta(days=1)
+    maxdate = datetime.date.today()
     if end > maxdate:
         print("Data final nao pode ser maior que {}".format(maxdate))
         sys.exit(1)
