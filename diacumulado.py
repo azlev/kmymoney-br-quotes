@@ -46,3 +46,7 @@ class TestDI(unittest.TestCase):
         ret = dib3([Decimal('6.89')] * 2, Decimal('100.0000'))
         self.assertEqual(ret, Decimal('1.00052895'))
 
+    def test_dib3_january_2018(self):
+        ret = dib3([Decimal('6.89')] * 22, Decimal('100.0000'))
+        self.assertEqual(ret, Decimal('1.00583386'))
+
