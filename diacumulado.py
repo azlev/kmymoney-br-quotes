@@ -22,6 +22,9 @@ def dib3(taxas: List[Decimal], p: Decimal) -> Decimal:
     if not taxas:
         return Decimal(0)
 
+
+    decimal.getcontext().rounding = decimal.ROUND_FLOOR
+    p = round(p, 4)
     ret = Decimal(1)
     for taxa in taxas:
         di = tdik(taxa)
@@ -143,7 +146,7 @@ def getquotes(conn, start: date, end: date) -> List[Decimal]:
     return [x[0] for x in cursor]
 
 
-def main(start: date, end: date, p: Decimal):
+def main(start: date, end: date, p: Decimal, cachefile: str):
     if start < mindate():
         print("Data inicial nao pode ser menor que {}".format(mindate()))
         sys.exit(1)
@@ -153,7 +156,7 @@ def main(start: date, end: date, p: Decimal):
         print("Data final nao pode ser maior que {}".format(maxdate))
         sys.exit(1)
 
-    conn = setupdb("di.sqlite3")
+    conn = setupdb(cachefile)
     cmindate = cachemindate(conn)
     if cmindate < (end - datetime.timedelta(days=1)):
         makecache(conn, cmindate + datetime.timedelta(days=1), end)
@@ -161,9 +164,8 @@ def main(start: date, end: date, p: Decimal):
     quotes = getquotes(conn, start, end)
 
     ret = dib3(quotes, p)
-    print(ret)
-    # mindate(), date(2018, 9, 14), Decimal(100)
-    # print("1,82143297")
+    print('"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret))
+
 
 def getparser():
     parser = argparse.ArgumentParser(description="Calculo de DI acumulado entre datas")
@@ -171,6 +173,7 @@ def getparser():
     final_default = date.today() - datetime.timedelta(days=1)
     parser.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
     parser.add_argument('--porcentagem', type=str, default='100')
+    parser.add_argument('--cachefile', type=str, default='di.sqlite3')
     return parser
 
 if __name__ == '__main__':
@@ -179,5 +182,5 @@ if __name__ == '__main__':
     start = datetime.datetime.strptime(args.inicial, '%Y-%m-%d').date()
     end = datetime.datetime.strptime(args.final, '%Y-%m-%d').date()
     p = Decimal(args.porcentagem)
-    main(start, end, p)
+    main(start, end, p, args.cachefile)
 
