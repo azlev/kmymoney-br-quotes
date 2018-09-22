@@ -103,7 +103,7 @@ def setupdb(filename: str):
     return conn
 
 
-def cachemindate(conn):
+def cachemaxdate(conn):
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM di ORDER BY id DESC LIMIT 1")
     ret = cursor.fetchone()
@@ -157,9 +157,9 @@ def main(start: date, end: date, p: Decimal, cachefile: str):
         sys.exit(1)
 
     conn = setupdb(cachefile)
-    cmindate = cachemindate(conn)
-    if cmindate < (end - datetime.timedelta(days=1)):
-        makecache(conn, cmindate + datetime.timedelta(days=1), end)
+    cmaxdate = cachemaxdate(conn)
+    if cmaxdate < (end - datetime.timedelta(days=1)):
+        makecache(conn, cmaxdate + datetime.timedelta(days=1), end)
 
     quotes = getquotes(conn, start, end)
 
