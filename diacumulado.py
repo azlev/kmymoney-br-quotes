@@ -8,13 +8,18 @@ import decimal
 import ftplib
 import io
 import logging
+import pandas
+import requests
 import sqlite3
 import sys
 import unittest
+import tempfile
+import warnings
 
 
 from datetime import date
 from decimal import Decimal
+from html.parser import HTMLParser
 from typing import List
 
 
@@ -146,7 +151,7 @@ def getquotes(conn, start: date, end: date) -> List[Decimal]:
     return [x[0] for x in cursor]
 
 
-def main(start: date, end: date, p: Decimal, cachefile: str):
+def maindi(start: date, end: date, p: Decimal, cachefile: str):
     if start < mindate():
         print("Data inicial nao pode ser menor que {}".format(mindate()))
         sys.exit(1)
@@ -164,23 +169,112 @@ def main(start: date, end: date, p: Decimal, cachefile: str):
     quotes = getquotes(conn, start, end)
 
     ret = dib3(quotes, p)
-    print('"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret))
+    return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
+
+
+def maintd(data: date, titulo: str, cachefile: str):
+    sigla, vencimento = titulo.split('_')
+
+    class MyHTMLParser(HTMLParser):
+
+        def __init__(self):
+            HTMLParser.__init__(self)
+            self.tables = {}
+            self.current_table = None
+            self.href = None
+            end = datetime.date.today().year
+            for i in range(2002, end + 1):
+                k = "{} - ".format(i)
+                self.tables[k] = {}
+
+        def handle_starttag(self, tag, attrs):
+            if self.current_table is not None and tag == 'a':
+                for k, v in attrs:
+                    if k == 'href':
+                        self.href = v
+                        break
+
+        def handle_data(self, data):
+            if data in self.tables.keys():
+                self.current_table = self.tables[data]
+            elif self.href:
+                self.current_table[data] = self.href
+                self.href = None
+
+        def geturls(self):
+            baseurl = "https://sisweb.tesouro.gov.br/apex/"
+            years = sorted(self.tables.keys())
+            for y in years:
+                year = int(y[0:3])
+                tabela = self.tables[y]
+                for titulo, path in tabela.items():
+                    yield year, titulo, baseurl + path
+
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        # indice
+        r = requests.get("https://sisweb.tesouro.gov.br/apex/f?p=2031:2:::::", verify=False)
+        parser = MyHTMLParser()
+        parser.feed(r.content.decode('utf-8'))
+        for ano, s, path in parser.geturls():
+            if ano != data.year:
+                continue
+            if s == sigla:
+                break
+        r = requests.get(path, verify=False)
+
+    tf = tempfile.NamedTemporaryFile()
+    tf.file.write(r.content)
+    xls = pandas.ExcelFile(tf.name)
+
+    xls.sheet_names
+
+    pd = xls.parse('{} {}'.format(sigla, vencimento), header=1)
+
+    for index, row in pd.iterrows():
+        d = datetime.datetime.strptime(row[0], '%d/%m/%Y').date()
+        if d == data:
+            break
+
+    return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), row[5])
 
 
 def getparser():
-    parser = argparse.ArgumentParser(description="Calculo de DI acumulado entre datas")
-    parser.add_argument('--inicial', type=str, default='2012-08-20')
-    final_default = date.today() - datetime.timedelta(days=1)
-    parser.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
-    parser.add_argument('--porcentagem', type=str, default='100')
+    parser = argparse.ArgumentParser(description="")
     parser.add_argument('--cachefile', type=str, default='di.sqlite3')
+
+    subparsers = parser.add_subparsers(dest='command')
+    parser_di = subparsers.add_parser("DI", help="Calculo de DI acumulado entre datas")
+    parser_di.add_argument('--inicial', type=str, default='2012-08-20')
+    final_default = date.today() - datetime.timedelta(days=1)
+    parser_di.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
+    parser_di.add_argument('--porcentagem', type=str, default='100')
+
+    parser_td = subparsers.add_parser("TD", help="Tesouro Direto")
+    parser_td.add_argument('--titulo', type=str, required=True, help="Nome_vencimento do titulo, (exemplo: 'LFT_010323')")
+    parser_td.add_argument('--data', type=str, default=final_default.strftime('%Y-%m-%d'))
     return parser
 
 if __name__ == '__main__':
     parser = getparser()
     args = parser.parse_args()
-    start = datetime.datetime.strptime(args.inicial, '%Y-%m-%d').date()
-    end = datetime.datetime.strptime(args.final, '%Y-%m-%d').date()
-    p = Decimal(args.porcentagem)
-    main(start, end, p, args.cachefile)
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    ret = None
+
+    if args.command == 'DI':
+        start = datetime.datetime.strptime(args.inicial, '%Y-%m-%d').date()
+        end = datetime.datetime.strptime(args.final, '%Y-%m-%d').date()
+        p = Decimal(args.porcentagem)
+        ret = maindi(start, end, p, args.cachefile)
+
+    if args.command == 'TD':
+        data = datetime.datetime.strptime(args.data, '%Y-%m-%d').date()
+        ret = maintd(data, args.titulo, args.cachefile)
+
+    print(ret)
 
