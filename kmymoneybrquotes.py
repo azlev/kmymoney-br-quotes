@@ -104,6 +104,12 @@ def setupdb(filename: str):
     cursor.execute("""CREATE TABLE IF NOT EXISTS di (
         id DATE PRIMARY KEY,
         tax NUMERIC(9,2) NOT NULL)""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS td (
+        s VARCHAR(10) NOT NULL,
+        d DATE NOT NULL,
+        tax NUMERIC(9,2) NOT NULL,
+        PRIMARY KEY (s, d))""")
     return conn
 
 
@@ -116,7 +122,7 @@ def cachemaxdate(conn):
     else:
         return mindate() - datetime.timedelta(days=1)
 
-def makecache(conn, start: date, end: date):
+def makecache(conn: sqlite3.Connection, start: date, end: date):
     ftp = ftplib.FTP('ftp.cetip.com.br')
     ftp.login()
     ftp.cwd('MediaCDI')
@@ -149,7 +155,7 @@ def getquotes(conn, start: date, end: date) -> List[Decimal]:
             (start, end))
     return [x[0] for x in cursor]
 
-def getdays(conn, start: date, end: date) -> int:
+def getdays(conn: sqlite3.Connection, start: date, end: date) -> int:
     cursor = conn.cursor()
     cursor.execute("""SELECT COUNT(*)
                         FROM di
@@ -158,7 +164,7 @@ def getdays(conn, start: date, end: date) -> int:
     return cursor.fetchone()[0]
 
 
-def maindi(start: date, end: date, p: Decimal, cachefile: str):
+def maindi(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
     if start < mindate():
         print("Data inicial nao pode ser menor que {}".format(mindate()))
         sys.exit(1)
@@ -168,10 +174,6 @@ def maindi(start: date, end: date, p: Decimal, cachefile: str):
         print("Data final nao pode ser maior que {}".format(maxdate))
         sys.exit(1)
 
-    conn = setupdb(cachefile)
-    cmaxdate = cachemaxdate(conn)
-    if cmaxdate < (end - datetime.timedelta(days=1)):
-        makecache(conn, cmaxdate + datetime.timedelta(days=1), end)
 
     quotes = getquotes(conn, start, end)
 
@@ -179,14 +181,13 @@ def maindi(start: date, end: date, p: Decimal, cachefile: str):
     return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
 
 
-def mainpre(start: date, end: date, p: Decimal, cachefile: str):
-    conn = setupdb(cachefile)
+def mainpre(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
     dias = getdays(conn, start, end)
     ret = (Decimal(1) + (p / Decimal(100))) ** (Decimal(dias) / Decimal(252))
     return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
 
 
-def maintd(data: date, titulo: str, cachefile: str):
+def maintd(data: date, titulo: str, conn: sqlite3.Connection):
     sigla, vencimento = titulo.split('_')
 
     class MyHTMLParser(HTMLParser):
@@ -287,21 +288,26 @@ if __name__ == '__main__':
 
     ret = None
 
-    if args.command == 'DI':
-        start = datetime.datetime.strptime(args.inicial, '%Y-%m-%d').date()
-        end = datetime.datetime.strptime(args.final, '%Y-%m-%d').date()
-        p = Decimal(args.porcentagem)
-        ret = maindi(start, end, p, args.cachefile)
+    conn = setupdb(args.cachefile)
 
-    if args.command == 'TD':
-        data = datetime.datetime.strptime(args.data, '%Y-%m-%d').date()
-        ret = maintd(data, args.titulo, args.cachefile)
-
-    if args.command == 'PRE':
+    if args.command in ['DI', 'PRE']:
         inicial = datetime.datetime.strptime(args.inicial, '%Y-%m-%d').date()
         final = datetime.datetime.strptime(args.final, '%Y-%m-%d').date()
         p = Decimal(args.porcentagem)
-        ret = mainpre(inicial, final, p, args.cachefile)
+
+
+        cmaxdate = cachemaxdate(conn)
+        if cmaxdate < (final - datetime.timedelta(days=1)):
+            makecache(conn, cmaxdate + datetime.timedelta(days=1), end)
+
+        if args.command == 'DI':
+            ret = maindi(inicial, final, p, conn)
+        else:
+            ret = mainpre(inicial, final, p, conn)
+
+    elif args.command == 'TD':
+        data = datetime.datetime.strptime(args.data, '%Y-%m-%d').date()
+        ret = maintd(data, args.titulo, conn)
 
     print(ret)
 
