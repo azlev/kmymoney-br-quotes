@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 
-# http://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/metodologia-do-di.htm
-
 import argparse
 import datetime
 import decimal
@@ -23,6 +21,7 @@ from html.parser import HTMLParser
 from typing import List
 
 
+# http://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/metodologia-do-di.htm
 def dib3(taxas: List[Decimal], p: Decimal) -> Decimal:
     if not taxas:
         return Decimal(0)
@@ -150,6 +149,14 @@ def getquotes(conn, start: date, end: date) -> List[Decimal]:
             (start, end))
     return [x[0] for x in cursor]
 
+def getdays(conn, start: date, end: date) -> int:
+    cursor = conn.cursor()
+    cursor.execute("""SELECT COUNT(*)
+                        FROM di
+                       WHERE id BETWEEN ? AND ?""",
+            (start, end))
+    return cursor.fetchone()[0]
+
 
 def maindi(start: date, end: date, p: Decimal, cachefile: str):
     if start < mindate():
@@ -169,6 +176,13 @@ def maindi(start: date, end: date, p: Decimal, cachefile: str):
     quotes = getquotes(conn, start, end)
 
     ret = dib3(quotes, p)
+    return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
+
+
+def mainpre(start: date, end: date, p: Decimal, cachefile: str):
+    conn = setupdb(cachefile)
+    dias = getdays(conn, start, end)
+    ret = (Decimal(1) + (p / Decimal(100))) ** (Decimal(dias) / Decimal(252))
     return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
 
 
@@ -244,16 +258,23 @@ def getparser():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument('--cachefile', type=str, default='di.sqlite3')
 
+    final_default = date.today() - datetime.timedelta(days=1)
+
     subparsers = parser.add_subparsers(dest='command')
     parser_di = subparsers.add_parser("DI", help="Calculo de DI acumulado entre datas")
     parser_di.add_argument('--inicial', type=str, default='2012-08-20')
-    final_default = date.today() - datetime.timedelta(days=1)
     parser_di.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
     parser_di.add_argument('--porcentagem', type=str, default='100')
 
     parser_td = subparsers.add_parser("TD", help="Tesouro Direto")
     parser_td.add_argument('--titulo', type=str, required=True, help="Nome_vencimento do titulo, (exemplo: 'LFT_010323')")
     parser_td.add_argument('--data', type=str, default=final_default.strftime('%Y-%m-%d'))
+
+    parser_di = subparsers.add_parser("PRE", help="Calculo de Titulo PRE entre datas")
+    parser_di.add_argument('--inicial', type=str, required=True)
+    parser_di.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
+    parser_di.add_argument('--porcentagem', type=str, required=True)
+    
     return parser
 
 if __name__ == '__main__':
@@ -275,6 +296,12 @@ if __name__ == '__main__':
     if args.command == 'TD':
         data = datetime.datetime.strptime(args.data, '%Y-%m-%d').date()
         ret = maintd(data, args.titulo, args.cachefile)
+
+    if args.command == 'PRE':
+        inicial = datetime.datetime.strptime(args.inicial, '%Y-%m-%d').date()
+        final = datetime.datetime.strptime(args.final, '%Y-%m-%d').date()
+        p = Decimal(args.porcentagem)
+        ret = mainpre(inicial, final, p, args.cachefile)
 
     print(ret)
 
