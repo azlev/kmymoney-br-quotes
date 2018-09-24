@@ -6,9 +6,11 @@ import decimal
 import ftplib
 import io
 import logging
+import os
 import pandas
 import requests
 import sqlite3
+import subprocess
 import sys
 import unittest
 import tempfile
@@ -255,6 +257,30 @@ def maintd(data: date, titulo: str, conn: sqlite3.Connection):
     return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), row[5])
 
 
+def register(cachefile: str):
+    ret = subprocess.check_output(["kf5-config", "--path", "config"])
+    head, *tail = ret[:-1].split(b':')
+
+    config = os.path.join(head, b'kmymoney', b'kmymoneyrc')
+
+    if not cachefile[0] == '/':
+        cachefile = os.path.join(os.path.abspath('.'), cachefile)
+
+    with open(config, 'a') as f:
+        f.writelines([
+                "\n",
+                "[Online-Quote-Source-Brazilian Quotes]\n",
+                "CSVURL=\n"
+                "DateFormatRegex=%y-%m-%d\n",
+                'DateRegex="(\\\\d{4,4}-\\\\d{2,2}-\\\\d{2,2})",".*"\n',
+                "IDBy=0\n",
+                "IDRegex=\n",
+                'PriceRegex="\\\\d{4,4}-\\\\d{2,2}-\\\\d{2,2}","(.*)"\n',
+                "URL=file://{} --cachefile={} %1\n".
+                        format(os.path.abspath(sys.argv[0]), cachefile),
+                "\n"])
+
+
 def getparser():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument('--cachefile', type=str, default='di.sqlite3')
@@ -275,6 +301,9 @@ def getparser():
     parser_di.add_argument('--inicial', type=str, required=True)
     parser_di.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
     parser_di.add_argument('--porcentagem', type=str, required=True)
+
+    parser_register = subparsers.add_parser("REGISTER",
+            help="Registra o nome 'Brazilian Quotes' no kmymoney")
     
     return parser
 
@@ -285,6 +314,10 @@ if __name__ == '__main__':
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    if args.command == 'REGISTER':
+        register(args.cachefile)
+        sys.exit(0)
 
     ret = None
 
