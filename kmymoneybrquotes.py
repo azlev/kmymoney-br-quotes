@@ -124,7 +124,8 @@ def cachemaxdate(conn):
     else:
         return mindate() - datetime.timedelta(days=1)
 
-def makecache(conn: sqlite3.Connection, start: date, end: date):
+
+def makecachedi(conn: sqlite3.Connection, start: date, end: date):
     ftp = ftplib.FTP('ftp.cetip.com.br')
     ftp.login()
     ftp.cwd('MediaCDI')
@@ -148,24 +149,6 @@ def makecache(conn: sqlite3.Connection, start: date, end: date):
     conn.commit()
 
 
-def getquotes(conn, start: date, end: date) -> List[Decimal]:
-    cursor = conn.cursor()
-    cursor.execute("""SELECT tax
-                        FROM di
-                       WHERE id BETWEEN ? AND DATE(?, '-1 day')
-                       ORDER BY id""",
-            (start, end))
-    return [x[0] for x in cursor]
-
-def getdays(conn: sqlite3.Connection, start: date, end: date) -> int:
-    cursor = conn.cursor()
-    cursor.execute("""SELECT COUNT(*)
-                        FROM di
-                       WHERE id BETWEEN ? AND ?""",
-            (start, end))
-    return cursor.fetchone()[0]
-
-
 def maindi(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
     if start < mindate():
         print("Data inicial nao pode ser menor que {}".format(mindate()))
@@ -176,6 +159,14 @@ def maindi(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
         print("Data final nao pode ser maior que {}".format(maxdate))
         sys.exit(1)
 
+    def getquotes(conn, start: date, end: date) -> List[Decimal]:
+        cursor = conn.cursor()
+        cursor.execute("""SELECT tax
+                            FROM di
+                           WHERE id BETWEEN ? AND DATE(?, '-1 day')
+                           ORDER BY id""",
+                (start, end))
+        return [x[0] for x in cursor]
 
     quotes = getquotes(conn, start, end)
 
@@ -184,6 +175,14 @@ def maindi(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
 
 
 def mainpre(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
+    def getdays(conn: sqlite3.Connection, start: date, end: date) -> int:
+        cursor = conn.cursor()
+        cursor.execute("""SELECT COUNT(*)
+                            FROM di
+                           WHERE id BETWEEN ? AND ?""",
+                (start, end))
+        return cursor.fetchone()[0]
+
     dias = getdays(conn, start, end)
     ret = (Decimal(1) + (p / Decimal(100))) ** (Decimal(dias) / Decimal(252))
     return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
@@ -331,7 +330,7 @@ if __name__ == '__main__':
 
         cmaxdate = cachemaxdate(conn)
         if cmaxdate < (final - datetime.timedelta(days=1)):
-            makecache(conn, cmaxdate + datetime.timedelta(days=1), final)
+            makecachedi(conn, cmaxdate + datetime.timedelta(days=1), final)
 
         if args.command == 'DI':
             ret = maindi(inicial, final, p, conn)
