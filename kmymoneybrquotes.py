@@ -331,7 +331,7 @@ if __name__ == '__main__':
 
         cmaxdate = cachemaxdate(conn)
         if cmaxdate < (final - datetime.timedelta(days=1)):
-            makecache(conn, cmaxdate + datetime.timedelta(days=1), end)
+            makecache(conn, cmaxdate + datetime.timedelta(days=1), final)
 
         if args.command == 'DI':
             ret = maindi(inicial, final, p, conn)
