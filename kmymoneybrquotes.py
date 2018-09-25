@@ -244,12 +244,9 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
                 t = sheet[:-7]
                 p = sheet[-6:]
                 pd = xls.parse(sheet, header=1)
-
-                print(pd.dtypes)
-                print(t, p)
                 for _, row in pd.iterrows():
                     #print(row)
-                    d = row[0]
+                    d = pandas.to_datetime(row[0], dayfirst=True).date()
                     preco = row[-1]
                     if pandas.isnull(preco):
                         continue
@@ -257,12 +254,12 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
                     cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", (t, p, d, preco))
         conn.commit()
 
-    def gettdpreco(conn: sqlite3.Connection, titulo: str, data:date):
+    def gettdpreco(conn: sqlite3.Connection, titulo: str, prazo: str, data: date):
         cursor = conn.cursor()
         cursor.execute("SELECT preco FROM td WHERE titulo = ? AND PRAZO = ? AND data = ?", (titulo, prazo, data))
         return cursor.fetchone()[0]
 
-    ret = gettdpreco(conn, titulo, data)
+    ret = gettdpreco(conn, titulo, prazo, data)
 
     return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), ret)
 
