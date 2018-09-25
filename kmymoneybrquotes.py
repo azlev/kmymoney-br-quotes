@@ -220,7 +220,7 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
             baseurl = "https://sisweb.tesouro.gov.br/apex/"
             years = sorted(self.tables.keys())
             for y in years:
-                year = int(y[0:3])
+                year = int(y[0:4])
                 tabela = self.tables[y]
                 for titulo, path in tabela.items():
                     yield year, titulo, baseurl + path
