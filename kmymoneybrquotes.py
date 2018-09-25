@@ -105,13 +105,14 @@ def setupdb(filename: str):
     cursor = conn.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS di (
         id DATE PRIMARY KEY,
-        tax NUMERIC(9,2) NOT NULL)""")
+        preco NUMERIC(9,2) NOT NULL)""")
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS td (
-        s VARCHAR(10) NOT NULL,
-        d DATE NOT NULL,
-        tax NUMERIC(9,2) NOT NULL,
-        PRIMARY KEY (s, d))""")
+        titulo VARCHAR(10) NOT NULL,
+        prazo  VARCHAR(6) NOT NULL,
+        data DATE NOT NULL,
+        preco NUMERIC(9,2) NOT NULL,
+        PRIMARY KEY (titulo, prazo, data))""")
     return conn
 
 
@@ -143,9 +144,9 @@ def makecachedi(conn: sqlite3.Connection, start: date, end: date):
             continue
         contents.seek(0)
         strtax = contents.read(9)
-        tax = Decimal(strtax.decode("utf-8"))
-        tax = tax / 100
-        cursor.execute("INSERT INTO di VALUES (?, ?)", (d, tax))
+        preco = Decimal(strtax.decode("utf-8"))
+        preco = preco / 100
+        cursor.execute("INSERT INTO di VALUES (?, ?)", (d, preco))
     conn.commit()
 
 
@@ -161,7 +162,7 @@ def maindi(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
 
     def getquotes(conn, start: date, end: date) -> List[Decimal]:
         cursor = conn.cursor()
-        cursor.execute("""SELECT tax
+        cursor.execute("""SELECT preco
                             FROM di
                            WHERE id BETWEEN ? AND DATE(?, '-1 day')
                            ORDER BY id""",
@@ -188,9 +189,7 @@ def mainpre(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
     return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
 
 
-def maintd(data: date, titulo: str, conn: sqlite3.Connection):
-    sigla, vencimento = titulo.split('_')
-
+def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
     class MyHTMLParser(HTMLParser):
 
         def __init__(self):
@@ -233,27 +232,39 @@ def maintd(data: date, titulo: str, conn: sqlite3.Connection):
         r = requests.get("https://sisweb.tesouro.gov.br/apex/f?p=2031:2:::::", verify=False)
         parser = MyHTMLParser()
         parser.feed(r.content.decode('utf-8'))
+
+        cursor = conn.cursor()
         for ano, s, path in parser.geturls():
-            if ano != data.year:
-                continue
-            if s == sigla:
-                break
-        r = requests.get(path, verify=False)
+            r = requests.get(path, verify=False)
 
-    tf = tempfile.NamedTemporaryFile()
-    tf.file.write(r.content)
-    xls = pandas.ExcelFile(tf.name)
+            tf = tempfile.NamedTemporaryFile()
+            tf.file.write(r.content)
+            xls = pandas.ExcelFile(tf.name)
+            for sheet in xls.sheet_names:
+                t = sheet[:-7]
+                p = sheet[-6:]
+                pd = xls.parse(sheet, header=1)
 
-    xls.sheet_names
+                print(pd.dtypes)
+                print(t, p)
+                for _, row in pd.iterrows():
+                    #print(row)
+                    d = row[0]
+                    preco = row[-1]
+                    if pandas.isnull(preco):
+                        continue
+                    preco = Decimal(row[-1])
+                    cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", (t, p, d, preco))
+        conn.commit()
 
-    pd = xls.parse('{} {}'.format(sigla, vencimento), header=1)
+    def gettdpreco(conn: sqlite3.Connection, titulo: str, data:date):
+        cursor = conn.cursor()
+        cursor.execute("SELECT preco FROM td WHERE titulo = ? AND PRAZO = ? AND data = ?", (titulo, prazo, data))
+        return cursor.fetchone()[0]
 
-    for index, row in pd.iterrows():
-        d = datetime.datetime.strptime(row[0], '%d/%m/%Y').date()
-        if d == data:
-            break
+    ret = gettdpreco(conn, titulo, data)
 
-    return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), row[5])
+    return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), ret)
 
 
 def register(cachefile: str):
@@ -293,7 +304,8 @@ def getparser():
     parser_di.add_argument('--porcentagem', type=str, default='100')
 
     parser_td = subparsers.add_parser("TD", help="Tesouro Direto")
-    parser_td.add_argument('--titulo', type=str, required=True, help="Nome_vencimento do titulo, (exemplo: 'LFT_010323')")
+    parser_td.add_argument('--titulo', type=str, required=True, help="LFT, NTN-B Princ, NTN-F, ...")
+    parser_td.add_argument('--prazo', type=str, required=True, help="010129")
     parser_td.add_argument('--data', type=str, default=final_default.strftime('%Y-%m-%d'))
 
     parser_di = subparsers.add_parser("PRE", help="Calculo de Titulo PRE entre datas")
@@ -339,7 +351,7 @@ if __name__ == '__main__':
 
     elif args.command == 'TD':
         data = datetime.datetime.strptime(args.data, '%Y-%m-%d').date()
-        ret = maintd(data, args.titulo, conn)
+        ret = maintd(data, args.titulo, args.prazo, conn)
 
     print(ret)
 
