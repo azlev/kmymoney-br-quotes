@@ -188,8 +188,30 @@ def mainpre(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
     ret = (Decimal(1) + (p / Decimal(100))) ** (Decimal(dias) / Decimal(252))
     return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
 
+def normalizatitulo(titulo: str) -> str:
+    titulo = titulo.replace('-', '')
+    titulo = titulo.replace('Principal', 'P')
+    titulo = titulo.replace('Princ', 'P')
+    titulo = titulo.replace(' ', '')
+    return titulo
+
+
+class TestNormaliza(unittest.TestCase):
+    def test_normaliza(self):
+        self.assertEqual(normalizatitulo("LFT"), "LFT")
+        self.assertEqual(normalizatitulo("LTN"), "LTN")
+        self.assertEqual(normalizatitulo("NTN-B"), "NTNB")
+        self.assertEqual(normalizatitulo("NTN-B Princ"), "NTNBP")
+        self.assertEqual(normalizatitulo("NTN-B Principal"), "NTNBP")
+        self.assertEqual(normalizatitulo("NTN-C"), "NTNC")
+        self.assertEqual(normalizatitulo("NTNBP"), "NTNBP")
+        self.assertEqual(normalizatitulo("NTNC"), "NTNC")
+        self.assertEqual(normalizatitulo("NTNF"), "NTNF")
+
 
 def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
+    titulo = normalizatitulo(titulo)
+
     class MyHTMLParser(HTMLParser):
 
         def __init__(self):
@@ -230,29 +252,34 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
         warnings.simplefilter("ignore")
         # indice
         r = requests.get("https://sisweb.tesouro.gov.br/apex/f?p=2031:2:::::", verify=False)
-        parser = MyHTMLParser()
-        parser.feed(r.content.decode('utf-8'))
 
-        cursor = conn.cursor()
-        for ano, s, path in parser.geturls():
+    parser = MyHTMLParser()
+    parser.feed(r.content.decode('utf-8'))
+
+    cursor = conn.cursor()
+    for ano, s, path in parser.geturls():
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             r = requests.get(path, verify=False)
 
-            tf = tempfile.NamedTemporaryFile()
-            tf.file.write(r.content)
-            xls = pandas.ExcelFile(tf.name)
-            for sheet in xls.sheet_names:
-                t = sheet[:-7]
-                p = sheet[-6:]
-                pd = xls.parse(sheet, header=1)
-                for _, row in pd.iterrows():
-                    #print(row)
-                    d = pandas.to_datetime(row[0], dayfirst=True).date()
-                    preco = row[-1]
-                    if pandas.isnull(preco):
-                        continue
-                    preco = Decimal(row[-1])
-                    cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", (t, p, d, preco))
-        conn.commit()
+        tf = tempfile.NamedTemporaryFile()
+        tf.file.write(r.content)
+        xls = pandas.ExcelFile(tf.name)
+        for sheet in xls.sheet_names:
+            t = sheet[:-7]
+            t = normalizatitulo(t)
+            p = sheet[-6:]
+            pd = xls.parse(sheet, header=1)
+            for _, row in pd.iterrows():
+                #print(row)
+                d = pandas.to_datetime(row[0], dayfirst=True).date()
+                preco = row[-1]
+                if pandas.isnull(preco):
+                    continue
+                preco = Decimal(row[-1])
+                cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", (t, p, d, preco))
+    conn.commit()
 
     def gettdpreco(conn: sqlite3.Connection, titulo: str, prazo: str, data: date):
         cursor = conn.cursor()
