@@ -21,6 +21,7 @@ from datetime import date
 from decimal import Decimal
 from html.parser import HTMLParser
 from typing import List
+from typing import Tuple
 
 
 # http://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/metodologia-do-di.htm
@@ -210,85 +211,107 @@ class TestNormaliza(unittest.TestCase):
 
 
 def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
-    titulo = normalizatitulo(titulo)
+    def maketdcache(conn: sqlite3.Connection, inicio: date):
+        class MyHTMLParser(HTMLParser):
 
-    class MyHTMLParser(HTMLParser):
-
-        def __init__(self):
-            HTMLParser.__init__(self)
-            self.tables = {}
-            self.current_table = None
-            self.href = None
-            end = datetime.date.today().year
-            for i in range(2002, end + 1):
-                k = "{} - ".format(i)
-                self.tables[k] = {}
-
-        def handle_starttag(self, tag, attrs):
-            if self.current_table is not None and tag == 'a':
-                for k, v in attrs:
-                    if k == 'href':
-                        self.href = v
-                        break
-
-        def handle_data(self, data):
-            if data in self.tables.keys():
-                self.current_table = self.tables[data]
-            elif self.href:
-                self.current_table[data] = self.href
+            def __init__(self):
+                HTMLParser.__init__(self)
+                self.tables = {}
+                self.current_table = None
                 self.href = None
+                end = datetime.date.today().year
+                for i in range(2002, end + 1):
+                    k = "{} - ".format(i)
+                    self.tables[k] = {}
 
-        def geturls(self):
-            baseurl = "https://sisweb.tesouro.gov.br/apex/"
-            years = sorted(self.tables.keys())
-            for y in years:
-                year = int(y[0:4])
-                tabela = self.tables[y]
-                for titulo, path in tabela.items():
-                    yield year, titulo, baseurl + path
+            def handle_starttag(self, tag, attrs):
+                if self.current_table is not None and tag == 'a':
+                    for k, v in attrs:
+                        if k == 'href':
+                            self.href = v
+                            break
 
+            def handle_data(self, data):
+                if data in self.tables.keys():
+                    self.current_table = self.tables[data]
+                elif self.href:
+                    self.current_table[data] = self.href
+                    self.href = None
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        # indice
-        r = requests.get("https://sisweb.tesouro.gov.br/apex/f?p=2031:2:::::", verify=False)
+            def geturls(self):
+                baseurl = "https://sisweb.tesouro.gov.br/apex/"
+                years = sorted(self.tables.keys())
+                for y in years:
+                    year = int(y[0:4])
+                    tabela = self.tables[y]
+                    for titulo, path in tabela.items():
+                        yield year, titulo, baseurl + path
 
-    parser = MyHTMLParser()
-    parser.feed(r.content.decode('utf-8'))
-
-    cursor = conn.cursor()
-    for ano, s, path in parser.geturls():
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            r = requests.get(path, verify=False)
+            # indice
+            r = requests.get("https://sisweb.tesouro.gov.br/apex/f?p=2031:2:::::", verify=False)
 
-        tf = tempfile.NamedTemporaryFile()
-        tf.file.write(r.content)
-        xls = pandas.ExcelFile(tf.name)
-        for sheet in xls.sheet_names:
-            t = sheet[:-7]
-            t = normalizatitulo(t)
-            p = sheet[-6:]
-            pd = xls.parse(sheet, header=1)
-            for _, row in pd.iterrows():
-                #print(row)
-                d = pandas.to_datetime(row[0], dayfirst=True).date()
-                preco = row[-1]
-                if pandas.isnull(preco):
-                    continue
-                preco = Decimal(row[-1])
-                cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", (t, p, d, preco))
-    conn.commit()
+        parser = MyHTMLParser()
+        parser.feed(r.content.decode('utf-8'))
 
-    def gettdpreco(conn: sqlite3.Connection, titulo: str, prazo: str, data: date):
         cursor = conn.cursor()
-        cursor.execute("SELECT preco FROM td WHERE titulo = ? AND PRAZO = ? AND data = ?", (titulo, prazo, data))
-        return cursor.fetchone()[0]
+        for ano, s, path in parser.geturls():
+            if ano < inicio.year:
+                continue
 
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                r = requests.get(path, verify=False)
+
+            tf = tempfile.NamedTemporaryFile()
+            tf.file.write(r.content)
+            xls = pandas.ExcelFile(tf.name)
+            for sheet in xls.sheet_names:
+                t = sheet[:-7]
+                t = normalizatitulo(t)
+                p = sheet[-6:]
+                pd = xls.parse(sheet, header=1)
+                for _, row in pd.iterrows():
+                    d = pandas.to_datetime(row[0], dayfirst=True).date()
+                    if d <= inicio:
+                        continue
+                    preco = row[-1]
+                    if pandas.isnull(preco):
+                        continue
+                    preco = Decimal(row[-1])
+                    insert_tuple = (t, p, d, preco) 
+                    print("INSERT: %s" % (insert_tuple,))
+                    cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", insert_tuple)
+        conn.commit()
+
+    def gettdpreco(conn: sqlite3.Connection, titulo: str, prazo: str, data: date) -> Tuple[date, Decimal]:
+        cursor = conn.cursor()
+        cursor.execute("""SELECT data, preco
+                            FROM td
+                           WHERE titulo = ?
+                             AND prazo = ?
+                             AND data <= ?
+                           ORDER BY data DESC
+                           LIMIT 1""", (titulo, prazo, data))
+        ret = cursor.fetchone()
+        return ret
+
+    titulo = normalizatitulo(titulo)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT data FROM td ORDER BY data DESC LIMIT 1")
+    datecache = cursor.fetchone()[0]
+    if datecache is None:
+        datecache = date(2002, 1, 1)
+    cursor.close()
+    if datecache < data:
+        maketdcache(conn, datecache)
+ 
     ret = gettdpreco(conn, titulo, prazo, data)
 
-    return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), ret)
+    return '"{}","{}"'.format(ret[0].strftime("%Y-%m-%d"), ret[1])
 
 
 def register(cachefile: str):
