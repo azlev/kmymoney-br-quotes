@@ -310,6 +310,8 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
         maketdcache(conn, datecache)
  
     ret = gettdpreco(conn, titulo, prazo, data)
+    if not ret:
+        return "Erro: titulo='{}' prazo='{}' nao encontrados".format(titulo, prazo)
 
     return '"{}","{}"'.format(ret[0].strftime("%Y-%m-%d"), ret[1])
 
