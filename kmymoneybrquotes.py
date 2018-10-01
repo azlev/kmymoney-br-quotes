@@ -185,9 +185,19 @@ def mainpre(start: date, end: date, p: Decimal, conn: sqlite3.Connection):
                 (start, end))
         return cursor.fetchone()[0]
 
+    def getmaxdate(conn: sqlite3.Connection, data: date) -> date:
+        cursor = conn.cursor()
+        cursor.execute("""SELECT id
+                            FROM di
+                           WHERE id <= ?
+                           ORDER BY id
+                           DESC LIMIT 1""", (data,))
+        return cursor.fetchone()[0]
+
     dias = getdays(conn, start, end)
+    data = getmaxdate(conn, end)
     ret = (Decimal(1) + (p / Decimal(100))) ** (Decimal(dias) / Decimal(252))
-    return '"{}","{}"'.format(end.strftime("%Y-%m-%d"), ret)
+    return '"{}","{}"'.format(data.strftime("%Y-%m-%d"), ret)
 
 def normalizatitulo(titulo: str) -> str:
     titulo = titulo.replace('-', '')
