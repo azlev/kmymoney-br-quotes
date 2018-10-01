@@ -282,7 +282,7 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
                         continue
                     preco = Decimal(row[-1])
                     insert_tuple = (t, p, d, preco) 
-                    print("INSERT: %s" % (insert_tuple,))
+                    #print("INSERT: %s" % (insert_tuple,))
                     cursor.execute("INSERT INTO td VALUES (?, ?, ?, ?)", insert_tuple)
         conn.commit()
 
@@ -301,11 +301,14 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
     titulo = normalizatitulo(titulo)
 
     cursor = conn.cursor()
-    cursor.execute("SELECT data FROM td ORDER BY data DESC LIMIT 1")
-    datecache = cursor.fetchone()[0]
+    ret = cursor.execute("SELECT data FROM td ORDER BY data DESC LIMIT 1")
+    datecache = ret.fetchone()
     if datecache is None:
         datecache = date(2002, 1, 1)
+    else:
+        datecache = datecache[0]
     cursor.close()
+
     if datecache < data:
         maketdcache(conn, datecache)
  
