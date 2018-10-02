@@ -319,6 +319,9 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
         datecache = datecache[0]
     cursor.close()
 
+    while data.weekday() < 4:
+        data = data - datetime.timedelta(days=1)
+
     if datecache < data:
         maketdcache(conn, datecache)
  
