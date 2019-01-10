@@ -27,7 +27,7 @@ from typing import Tuple
 # http://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/metodologia-do-di.htm
 def dib3(taxas: List[Decimal], p: Decimal) -> Decimal:
     if not taxas:
-        return Decimal(0)
+        return Decimal(1)
 
 
     decimal.getcontext().rounding = decimal.ROUND_FLOOR
