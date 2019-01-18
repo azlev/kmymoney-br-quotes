@@ -371,7 +371,7 @@ def getparser():
     parser_td = subparsers.add_parser("TD", help="Tesouro Direto")
     parser_td.add_argument('--titulo', type=str, required=True, help="LFT, NTN-B Princ, NTN-F, ...")
     parser_td.add_argument('--prazo', type=str, required=True, help="010129")
-    parser_td.add_argument('--data', type=str, default=final_default.strftime('%Y-%m-%d'))
+    parser_td.add_argument('--data', type=str, default=date.today().strftime('%Y-%m-%d'))
 
     parser_di = subparsers.add_parser("PRE", help="Calculo de Titulo PRE entre datas")
     parser_di.add_argument('--inicial', type=str, required=True)
