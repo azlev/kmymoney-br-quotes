@@ -264,7 +264,7 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
             r = requests.get("https://sisweb.tesouro.gov.br/apex/f?p=2031:2:::::", verify=False)
 
         parser = MyHTMLParser()
-        parser.feed(r.content.decode('utf-8'))
+        parser.feed(r.content.decode(r.apparent_encoding))
 
         cursor = conn.cursor()
         for ano, s, path in parser.geturls():
@@ -319,7 +319,7 @@ def maintd(data: date, titulo: str, prazo: str, conn: sqlite3.Connection):
         datecache = datecache[0]
     cursor.close()
 
-    while data.weekday() < 4:
+    while data.weekday() > 4:
         data = data - datetime.timedelta(days=1)
 
     if datecache < data:
