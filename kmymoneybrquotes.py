@@ -88,10 +88,11 @@ def mindate() -> date:
     return date(2012, 8, 20)
 
 
+# both start and end are inclusive (different from python convention)
 def daterange(start: date, end: date):
     d = start
     oneday = datetime.timedelta(days=1)
-    while d < end:
+    while d <= end:
         yield d
         d += oneday
 
@@ -360,12 +361,10 @@ def getparser():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument('--cachefile', type=str, default='di.sqlite3')
 
-    final_default = date.today() - datetime.timedelta(days=1)
-
     subparsers = parser.add_subparsers(dest='command')
     parser_di = subparsers.add_parser("DI", help="Calculo de DI acumulado entre datas")
     parser_di.add_argument('--inicial', type=str, default='2012-08-20')
-    parser_di.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
+    parser_di.add_argument('--final', type=str, default=date.today().strftime('%Y-%m-%d'))
     parser_di.add_argument('--porcentagem', type=str, default='100')
 
     parser_td = subparsers.add_parser("TD", help="Tesouro Direto")
@@ -373,10 +372,10 @@ def getparser():
     parser_td.add_argument('--prazo', type=str, required=True, help="010129")
     parser_td.add_argument('--data', type=str, default=date.today().strftime('%Y-%m-%d'))
 
-    parser_di = subparsers.add_parser("PRE", help="Calculo de Titulo PRE entre datas")
-    parser_di.add_argument('--inicial', type=str, required=True)
-    parser_di.add_argument('--final', type=str, default=final_default.strftime('%Y-%m-%d'))
-    parser_di.add_argument('--porcentagem', type=str, required=True)
+    parser_pre = subparsers.add_parser("PRE", help="Calculo de Titulo PRE entre datas")
+    parser_pre.add_argument('--inicial', type=str, required=True)
+    parser_pre.add_argument('--final', type=str, default=date.today().strftime('%Y-%m-%d'))
+    parser_pre.add_argument('--porcentagem', type=str, required=True)
 
     parser_register = subparsers.add_parser("REGISTER",
             help="Registra o nome 'Brazilian Quotes' no kmymoney")
@@ -406,7 +405,16 @@ if __name__ == '__main__':
 
 
         cmaxdate = cachemaxdate(conn)
-        if cmaxdate < (final - datetime.timedelta(days=1)):
+        # a bit overkill to do this to prevent the ftp access, 
+        # but I'm getting too many max user connections
+        deltadays = 0
+        if final.weekday() == 0:
+            deltadays += 3
+        else:
+            x = final.weekday() - 4
+            deltadays = max(1, x)
+
+        if cmaxdate < (final - datetime.timedelta(days=deltadays)):
             makecachedi(conn, cmaxdate + datetime.timedelta(days=1), final)
 
         if args.command == 'DI':
