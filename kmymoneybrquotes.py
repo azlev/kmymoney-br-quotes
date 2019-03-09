@@ -88,11 +88,10 @@ def mindate() -> date:
     return date(2012, 8, 20)
 
 
-# both start and end are inclusive (different from python convention)
 def daterange(start: date, end: date):
     d = start
     oneday = datetime.timedelta(days=1)
-    while d <= end:
+    while d < end:
         yield d
         d += oneday
 
