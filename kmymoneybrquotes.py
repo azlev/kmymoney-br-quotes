@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import csv
 import datetime
 import decimal
 import ftplib
@@ -22,6 +23,7 @@ from decimal import Decimal
 from html.parser import HTMLParser
 from typing import List
 from typing import Tuple
+from zipfile import ZipFile
 
 
 # http://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/metodologia-do-di.htm
@@ -114,6 +116,13 @@ def setupdb(filename: str):
         data DATE NOT NULL,
         preco NUMERIC(9,2) NOT NULL,
         PRIMARY KEY (titulo, prazo, data))""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS ipca (
+        ano INT NOT NULL,
+        mes INT NOT NULL,
+        indice NUMERIC(9,2) NOT NULL,
+        variacao NUMERIC(9,2) NOT NULL,
+        PRIMARY KEY (ano, mes))""")
     return conn
 
 
@@ -148,6 +157,45 @@ def makecachedi(conn: sqlite3.Connection, start: date, end: date):
         preco = Decimal(strtax.decode("utf-8"))
         preco = preco / 100
         cursor.execute("INSERT INTO di VALUES (?, ?)", (d, preco))
+    conn.commit()
+
+
+def makecacheipca(conn: sqlite3.Connection):
+    ftp = ftplib.FTP('ftp.ibge.gov.br')
+    ftp.login()
+    ftp.cwd('Precos_Indices_de_Precos_ao_Consumidor/IPCA/Serie_Historica')
+    contents = io.BytesIO()
+    ftp.retrbinary("RETR " + "ipca_SerieHist.zip", contents.write)
+    ftp.close()
+    z = ZipFile(contents)
+
+    # there is only one file inside the zip file
+    zfilename = z.namelist()[0]
+    with z.open(zfilename) as zfile:
+        xls = zfile.read()
+    tf = tempfile.NamedTemporaryFile()
+    tf.file.write(xls)
+    pd = pandas.ExcelFile(tf.name)
+    cursor = conn.cursor()
+    months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
+    for sheet in pd.sheet_names:
+        sheetrows = pd.parse(sheet, header=1)
+        year = None
+        for _, row in sheetrows.iterrows():
+            # extract year
+            if row[0] in ['SÉRIE HISTÓRICA DO IPCA', 'ANO']:
+                continue
+            if not pandas.isna(row[0]):
+                try:
+                    year = int(row[0])
+                except:
+                    continue
+            if not year:
+                continue
+
+            if not pandas.isna(row[1]) and not pandas.isna(row[3]):
+                cursor.execute('INSERT INTO ipca VALUES(?, ?, ?, ?)',
+                        (year, months.index(row[1]) + 1, Decimal(row[2]), Decimal(row[3])))
     conn.commit()
 
 
@@ -376,6 +424,10 @@ def getparser():
     parser_pre.add_argument('--final', type=str, default=date.today().strftime('%Y-%m-%d'))
     parser_pre.add_argument('--porcentagem', type=str, required=True)
 
+    parser_stocks = subparsers.add_parser("QUOTE", help="Simple parser de um CSV baixado do google spreadsheets")
+    parser_stocks.add_argument('--quote', type=str, required=True, help="Chave")
+
+
     parser_register = subparsers.add_parser("REGISTER",
             help="Registra o nome 'Brazilian Quotes' no kmymoney")
     
@@ -424,6 +476,16 @@ if __name__ == '__main__':
     elif args.command == 'TD':
         data = datetime.datetime.strptime(args.data, '%Y-%m-%d').date()
         ret = maintd(data, args.titulo, args.prazo, conn)
+
+    elif args.command == 'QUOTE':
+        ret = requests.get('https://docs.google.com/spreadsheets/d/1UxyOKbWo7ghYlh5_UlPulcA_KxsVRgU-p-_WDu6cC8U/export?exportFormat=csv')
+        strio = io.StringIO(ret.text)
+        csvreader = csv.reader(strio)
+        for k, v in csvreader:
+            if k == args.quote:
+                d = date.today().strftime('%Y-%m-%d')
+                ret = '"{}","{}"'.format(d, v)
+                break
 
     print(ret)
 
