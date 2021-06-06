@@ -123,6 +123,11 @@ def setupdb(filename: str):
         indice NUMERIC(9,2) NOT NULL,
         variacao NUMERIC(9,2) NOT NULL,
         PRIMARY KEY (ano, mes))""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS quotes (
+        data DATE NOT NULL,
+        quote VARCHAR(6) NOT NULL,
+        preco NUMERIC(9,2) NOT NULL,
+        PRIMARY KEY (data, quote))""")
     return conn
 
 
@@ -404,6 +409,40 @@ def register(cachefile: str):
                 "\n"])
 
 
+def maingooglequote(d: date, quote: str, conn: sqlite3.Connection):
+
+
+    def makequotescache(conn: sqlite3.Connection, d: date):
+        ret = requests.get('https://docs.google.com/spreadsheets/d/1UxyOKbWo7ghYlh5_UlPulcA_KxsVRgU-p-_WDu6cC8U/export?exportFormat=csv')
+        strio = io.StringIO(ret.text)
+        csvreader = csv.reader(strio)
+        cursor = conn.cursor()
+
+        for k, v in csvreader:
+            try:
+                cursor.execute("INSERT INTO quotes VALUES (?, ?, ?)", (d, k, v))
+            except sqlite3.IntegrityError as e:
+                # warn duplicate
+                pass
+
+
+    def query(d: date, quote: str, conn: sqlite3.Connection):
+        cursor = conn.cursor()
+        cursor.execute("SELECT preco FROM quotes WHERE data = ? AND quote = ?", (d, quote))
+        ret = cursor.fetchone()
+        if not ret:
+            return None
+        return ret[0]
+
+
+    ret = query(d, quote, conn)
+    if not ret:
+        makequotescache(conn, d)
+        ret = query(d, quote, conn)
+
+    return '"{}","{}"'.format(d, ret)
+
+
 def getparser():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument('--cachefile', type=str, default='di.sqlite3')
@@ -478,14 +517,8 @@ if __name__ == '__main__':
         ret = maintd(data, args.titulo, args.prazo, conn)
 
     elif args.command == 'QUOTE':
-        ret = requests.get('https://docs.google.com/spreadsheets/d/1UxyOKbWo7ghYlh5_UlPulcA_KxsVRgU-p-_WDu6cC8U/export?exportFormat=csv')
-        strio = io.StringIO(ret.text)
-        csvreader = csv.reader(strio)
-        for k, v in csvreader:
-            if k == args.quote:
-                d = date.today().strftime('%Y-%m-%d')
-                ret = '"{}","{}"'.format(d, v)
-                break
+        d = date.today().strftime('%Y-%m-%d')
+        ret = maingooglequote(d, args.quote, conn)
 
     print(ret)
 
